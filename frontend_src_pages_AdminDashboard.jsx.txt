@@ -1,0 +1,387 @@
+import React, { useState, useEffect, useRef } from 'react';
+import io from 'socket.io-client';
+import './AdminDashboard.css';
+import { API_BASE_URL, SOCKET_SERVER_URL } from '../config';
+
+const AdminDashboard = () => {
+  const [orders, setOrders] = useState([]);
+  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
+  const [shopStatus, setShopStatus] = useState('open');
+  const [rushMode, setRushMode] = useState(false);
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const socketRef = useRef(null);
+  const audioRef = useRef(null);
+
+  // Initialize Socket.io
+  useEffect(() => {
+    socketRef.current = io(SOCKET_SERVER_URL);
+
+    socketRef.current.on('connect', () => {
+      console.log('Connected to server');
+      socketRef.current.emit('adminConnected', { role: 'barista' });
+    });
+
+    // Listen for new orders
+    socketRef.current.on('newOrder', (data) => {
+      console.log('New order received:', data);
+      playSound();
+      showNotification('New Order Alert!', `Order #${data.orderNumber} received`);
+      fetchOrders();
+    });
+
+    // Listen for order status updates
+    socketRef.current.on('orderStatusUpdated', (data) => {
+      console.log('Order status updated:', data);
+      fetchOrders();
+    });
+
+    // Listen for settings updates
+    socketRef.current.on('settingsUpdated', (data) => {
+      setSettings(data);
+    });
+
+    return () => {
+      socketRef.current?.disconnect();
+    };
+  }, []);
+
+  // Fetch orders on component mount
+  useEffect(() => {
+    fetchOrders();
+    fetchSettings();
+    fetchActiveOrdersCount();
+
+    // Refresh data every 5 seconds
+    const interval = setInterval(() => {
+      fetchOrders();
+      fetchActiveOrdersCount();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch all orders
+  const fetchOrders = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/orders`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      const data = await response.json();
+      setOrders(data.orders || []);
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    }
+  };
+
+  // Fetch settings
+  const fetchSettings = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/settings`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      const data = await response.json();
+      setSettings(data);
+      setShopStatus(data.shopStatus);
+      setRushMode(data.rushMode);
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
+  };
+
+  // Fetch active orders count
+  const fetchActiveOrdersCount = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/orders/active/count`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      const data = await response.json();
+      setActiveOrdersCount(data.activeOrdersCount);
+    } catch (error) {
+      console.error('Error fetching active orders:', error);
+    }
+  };
+
+  // Play notification sound
+  const playSound = () => {
+    if (audioRef.current) {
+      audioRef.current.play().catch((error) => {
+        console.error('Error playing sound:', error);
+      });
+    }
+  };
+
+  // Show browser notification
+  const showNotification = (title, body) => {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body });
+    }
+  };
+
+  // Approve order
+  const approveOrder = async (orderId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/approve`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (response.ok) {
+        fetchOrders();
+      }
+    } catch (error) {
+      console.error('Error approving order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reject order
+  const rejectOrder = async (orderId) => {
+    const reason = prompt('Reason for rejection:');
+    if (!reason) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/reject`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason }),
+      });
+      if (response.ok) {
+        fetchOrders();
+      }
+    } catch (error) {
+      console.error('Error rejecting order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mark as preparing
+  const markPreparing = async (orderId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/preparing`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (response.ok) {
+        fetchOrders();
+      }
+    } catch (error) {
+      console.error('Error marking as preparing:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mark as ready
+  const markReady = async (orderId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/ready`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (response.ok) {
+        fetchOrders();
+      }
+    } catch (error) {
+      console.error('Error marking as ready:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mark as completed
+  const completeOrder = async (orderId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/complete`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (response.ok) {
+        fetchOrders();
+      }
+    } catch (error) {
+      console.error('Error completing order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Pause/Resume shop
+  const togglePauseShop = async () => {
+    const newStatus = shopStatus === 'open' ? 'paused' : 'open';
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/settings`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ shopStatus: newStatus }),
+      });
+      if (response.ok) {
+        setShopStatus(newStatus);
+        fetchSettings();
+      }
+    } catch (error) {
+      console.error('Error toggling shop status:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get status color
+  const getStatusColor = (status) => {
+    const colors = {
+      pending: '#FFC107',
+      approved: '#2196F3',
+      preparing: '#2196F3',
+      ready: '#4CAF50',
+      completed: '#4CAF50',
+      rejected: '#F44336',
+    };
+    return colors[status] || '#9E9E9E';
+  };
+
+  // Filter pending and approved orders (highest priority)
+  const priorityOrders = orders.filter((order) =>
+    ['pending', 'approved', 'preparing', 'ready'].includes(order.status)
+  );
+
+  return (
+    <div className="admin-dashboard">
+      <audio ref={audioRef} src="/sounds/adora_sound.mp3" />
+
+      {/* Header */}
+      <div className="dashboard-header">
+        <div className="header-left">
+          <h1>☕ ADORA Dashboard</h1>
+          <p className="active-count">Active Orders: {activeOrdersCount}</p>
+        </div>
+        <div className="header-right">
+          <button
+            className={`pause-btn ${shopStatus === 'paused' ? 'active' : ''}`}
+            onClick={togglePauseShop}
+            disabled={loading}
+          >
+            {shopStatus === 'open' ? '⏸ Pause' : '▶ Resume'}
+          </button>
+        </div>
+      </div>
+
+      {/* Orders Grid */}
+      <div className="orders-container">
+        {priorityOrders.length === 0 ? (
+          <div className="no-orders">
+            <p>No active orders</p>
+          </div>
+        ) : (
+          priorityOrders.map((order) => (
+            <div key={order._id} className="order-card" style={{ borderLeft: `5px solid ${getStatusColor(order.status)}` }}>
+              <div className="order-header">
+                <div>
+                  <h3>Order #{order.orderNumber}</h3>
+                  <p className="order-time">
+                    {new Date(order.createdAt).toLocaleTimeString()}
+                  </p>
+                </div>
+                <span className="status-badge" style={{ background: getStatusColor(order.status) }}>
+                  {order.status.toUpperCase()}
+                </span>
+              </div>
+
+              <div className="order-items">
+                <h4>Items:</h4>
+                {order.items.map((item, idx) => (
+                  <p key={idx}>
+                    {item.quantity}x {item.productId?.name || 'Unknown'}
+                    {item.customizations?.extraShot && ' (+ Shot)'}
+                  </p>
+                ))}
+              </div>
+
+              <div className="order-info">
+                <p>⏱️ Est. Time: {order.estimatedTime} min</p>
+                <p>💰 Total: ${order.totalPrice.toFixed(2)}</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="order-actions">
+                {order.status === 'pending' && (
+                  <>
+                    <button
+                      className="btn-approve"
+                      onClick={() => approveOrder(order._id)}
+                      disabled={loading}
+                    >
+                      ✅ Approve
+                    </button>
+                    <button
+                      className="btn-reject"
+                      onClick={() => rejectOrder(order._id)}
+                      disabled={loading}
+                    >
+                      ❌ Reject
+                    </button>
+                  </>
+                )}
+                {order.status === 'approved' && (
+                  <button
+                    className="btn-preparing"
+                    onClick={() => markPreparing(order._id)}
+                    disabled={loading}
+                  >
+                    🍵 Start Preparing
+                  </button>
+                )}
+                {order.status === 'preparing' && (
+                  <button
+                    className="btn-ready"
+                    onClick={() => markReady(order._id)}
+                    disabled={loading}
+                  >
+                    ✨ Mark Ready
+                  </button>
+                )}
+                {order.status === 'ready' && (
+                  <button
+                    className="btn-complete"
+                    onClick={() => completeOrder(order._id)}
+                    disabled={loading}
+                  >
+                    📦 Completed
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AdminDashboard;
